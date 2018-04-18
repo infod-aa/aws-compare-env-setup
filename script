@@ -20,6 +20,9 @@ do
   aws autoscaling describe-policies --auto-scaling-group-name "${ASG[1]}" --output=text >> ${i}.temp
   bar 'Launch Config properties' "${i}"
   aws autoscaling describe-launch-configurations --launch-configuration-names "${LAUNCH}" --output=text >> ${i}.temp
+  LB_ITEM=$(aws elbv2 describe-load-balancers --output=text | awk '/LOADBALANCERS/{ print $7 }' | grep "${i}")
+  bar 'Application Load balancer' "${i}"
+  LB_ARN=$(aws elbv2 describe-load-balancers --names "${LB_ITEM}" --output=text | tee -a ${i}.temp | awk '/LOADBALANCERS/{ print $6 }')
 done
 paste -d "\n" ./*.temp > result
 rm -v ./*.temp
