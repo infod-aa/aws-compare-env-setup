@@ -1,0 +1,25 @@
+#!/bin/bash
+#ITEMS="Confluence Confluence-cert1 Confluence-cert2 Confluence-cert3"
+ITEMS="Confluence-cert1 Confluence-cert2"
+function bar () {
+  printf %60s | tr " " "#" >> ${2}.temp
+  echo -e "\n\n${1} ${2}" >> ${2}.temp
+}
+
+set -xe
+for i in $ITEMS
+do
+  bar 'Instance setup' "${i}"
+  ASG=($(aws ec2 describe-instances --filters Name=tag:Name,Values=${i} Name=availability-zone,Values=eu-central-1a --output=text | tee -a ${i}.temp | awk '/INSTANCES/{ ID=$9 ; next } /autoscaling/{ print ID " " $3}'))
+#  echo $INSTANCE >> ${i}.temp
+#  echo "ASG names"
+#  ASG=$(echo $INSTANCE | awk '/autoscaling/{ print $3 }')
+  bar 'ASG properties' "${i}"
+  LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG[1]}" --output=text | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
+  bar 'ASG policies' "${i}"
+  aws autoscaling describe-policies --auto-scaling-group-name "${ASG[1]}" --output=text >> ${i}.temp
+  bar 'Launch Config properties' "${i}"
+  aws autoscaling describe-launch-configurations --launch-configuration-names "${LAUNCH}" --output=text >> ${i}.temp
+done
+paste -d "\n" ./*.temp > result
+rm -v ./*.temp
