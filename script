@@ -1,28 +1,31 @@
 #!/bin/bash
-#ITEMS="Confluence Confluence-cert1 Confluence-cert2 Confluence-cert3"
-ITEMS="Confluence-cert1 Confluence-cert2"
-function bar () {
-  printf %60s | tr " " "#" >> ${2}.temp
-  echo -e "\n\n${1} ${2}" >> ${2}.temp
+ITEMS=""
+AZ="eu-central-1a"
+
+function header_bar () {
+  #printf %60s | tr " " "#" >> ${2}.temp
+  echo -e "\n### ${1} ${2}" >> ${2}.temp
 }
 
 set -xe
+TAG=$(echo $@ | sed 's/ /|/g')
+ITEMS=$(aws ec2 describe-instances --filters Name=availability-zone,Values="${AZ}" --output=text --query 'Reservations[].Instances[].[Tags[?Key==`Name`].Value]' | egrep -x "${TAG}" | sort | awk '{ $1=$1 ; ORS=" " } //')
+
 for i in $ITEMS
 do
-  bar 'Instance setup' "${i}"
-  ASG=($(aws ec2 describe-instances --filters Name=tag:Name,Values=${i} Name=availability-zone,Values=eu-central-1a --output=text | tee -a ${i}.temp | awk '/INSTANCES/{ ID=$9 ; next } /autoscaling/{ print ID " " $3}'))
-#  echo $INSTANCE >> ${i}.temp
-#  echo "ASG names"
-#  ASG=$(echo $INSTANCE | awk '/autoscaling/{ print $3 }')
-  bar 'ASG properties' "${i}"
-  LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG[1]}" --output=text | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
-  bar 'ASG policies' "${i}"
-  aws autoscaling describe-policies --auto-scaling-group-name "${ASG[1]}" --output=text >> ${i}.temp
-  bar 'Launch Config properties' "${i}"
+  header_bar 'Instance setup' "${i}"
+  ASG=$(aws ec2 describe-instances --filters Name=tag:Name,Values=${i} Name=availability-zone,Values="${AZ}" --output=text | tee -a ${i}.temp | awk '/autoscaling/{ print $3}')
+  header_bar 'ASG properties' "${i}"
+  LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG}" --output=text | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
+  header_bar 'ASG policies' "${i}"
+  aws autoscaling describe-policies --auto-scaling-group-name "${ASG}" --output=text >> ${i}.temp
+  header_bar 'Launch Config properties' "${i}"
   aws autoscaling describe-launch-configurations --launch-configuration-names "${LAUNCH}" --output=text >> ${i}.temp
-  LB_ITEM=$(aws elbv2 describe-load-balancers --output=text | awk '/LOADBALANCERS/{ print $7 }' | grep "${i}")
-  bar 'Application Load balancer' "${i}"
+  LB_ITEM=$(aws elbv2 describe-load-balancers --output=text | awk '/LOADBALANCERS/{ print $7 }' | grep "${i}-" | head -n 1 )
+  header_bar 'Application Load balancer' "${i}"
   LB_ARN=$(aws elbv2 describe-load-balancers --names "${LB_ITEM}" --output=text | tee -a ${i}.temp | awk '/LOADBALANCERS/{ print $6 }')
 done
+
+rm -fv ./result
 paste -d "\n" ./*.temp > result
-rm -v ./*.temp
+rm -fv ./*.temp
