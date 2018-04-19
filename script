@@ -1,4 +1,5 @@
 #!/bin/bash
+# ITEMS are exact Key:Name values of EC2 instances
 ITEMS=""
 AZ="eu-central-1a"
 
@@ -8,15 +9,18 @@ function header_bar () {
 }
 
 set -xe
-TAG=$(echo $@ | sed 's/ /|/g')
-ITEMS=$(aws ec2 describe-instances --filters Name=availability-zone,Values="${AZ}" --output=text --query 'Reservations[].Instances[].[Tags[?Key==`Name`].Value]' | egrep -x "${TAG}" | sort | awk '{ $1=$1 ; ORS=" " } //')
+if [ -z "$ITEMS" ] && [ -n "$ITEMS" ]; then
+  :;else
+  TAG=$(echo $@ | sed 's/ /|/g')
+  ITEMS=$(aws ec2 describe-instances --filters Name=availability-zone,Values="${AZ}" --output=text --query 'Reservations[].Instances[].[Tags[?Key==`Name`].Value]' | egrep -x "${TAG}" | sort | awk '{ $1=$1 ; ORS=" " } //')
+fi
 
 for i in $ITEMS
 do
   header_bar 'Instance setup' "${i}"
   ASG=$(aws ec2 describe-instances --filters Name=tag:Name,Values=${i} Name=availability-zone,Values="${AZ}" --output=text | tee -a ${i}.temp | awk '/autoscaling/{ print $3}')
   header_bar 'ASG properties' "${i}"
-  LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG}" --output=text | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
+  LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG}" --output=text | sort | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
   header_bar 'ASG policies' "${i}"
   aws autoscaling describe-policies --auto-scaling-group-name "${ASG}" --output=text >> ${i}.temp
   header_bar 'Launch Config properties' "${i}"
@@ -24,6 +28,16 @@ do
   LB_ITEM=$(aws elbv2 describe-load-balancers --output=text | awk '/LOADBALANCERS/{ print $7 }' | grep "${i}-" | head -n 1 )
   header_bar 'Application Load balancer' "${i}"
   LB_ARN=$(aws elbv2 describe-load-balancers --names "${LB_ITEM}" --output=text | tee -a ${i}.temp | awk '/LOADBALANCERS/{ print $6 }')
+  header_bar 'Application Load balancer attributes' "${i}"
+  aws elbv2 describe-load-balancer-attributes --load-balancer-arn "${LB_ARN}" --output=text >> ${i}.temp
+  header_bar 'Application Load balancer listeners' "${i}"
+  LIST_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "${LB_ARN}" --output=text | tee -a ${i}.temp | awk '/LISTENERS/ { printf $2 " "}' )
+#DEFAULTACTIONS
+  header_bar 'Application Load balancer rules' "${i}"
+  for k in ${LIST_ARN}
+  do
+    aws elbv2 describe-rules --listener-arn "${k}" --output=text >> ${i}.temp
+  done
 done
 
 rm -fv ./result
