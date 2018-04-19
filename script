@@ -53,7 +53,7 @@ do
   header_bar 'Application Load balancer Target Group Attributes' "${i}"
   for k in ${TG_ITEM}
   do
-    aws elbv2 describe-target-group-attributes --target-group-arn "${k}" --output >> ${i}.temp
+    aws elbv2 describe-target-group-attributes --target-group-arn "${k}" --output=text >> ${i}.temp
   done
 
 done
