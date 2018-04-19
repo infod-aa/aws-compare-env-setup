@@ -19,25 +19,43 @@ for i in $ITEMS
 do
   header_bar 'Instance setup' "${i}"
   ASG=$(aws ec2 describe-instances --filters Name=tag:Name,Values=${i} Name=availability-zone,Values="${AZ}" --output=text | tee -a ${i}.temp | awk '/autoscaling/{ print $3}')
+
   header_bar 'ASG properties' "${i}"
   LAUNCH=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "${ASG}" --output=text | sort | tee -a ${i}.temp | awk '/AUTOSCALINGGROUPS/{ print $9 }')
+
   header_bar 'ASG policies' "${i}"
   aws autoscaling describe-policies --auto-scaling-group-name "${ASG}" --output=text >> ${i}.temp
+
   header_bar 'Launch Config properties' "${i}"
   aws autoscaling describe-launch-configurations --launch-configuration-names "${LAUNCH}" --output=text >> ${i}.temp
   LB_ITEM=$(aws elbv2 describe-load-balancers --output=text | awk '/LOADBALANCERS/{ print $7 }' | grep "${i}-" | head -n 1 )
+
   header_bar 'Application Load balancer' "${i}"
   LB_ARN=$(aws elbv2 describe-load-balancers --names "${LB_ITEM}" --output=text | tee -a ${i}.temp | awk '/LOADBALANCERS/{ print $6 }')
+
   header_bar 'Application Load balancer attributes' "${i}"
   aws elbv2 describe-load-balancer-attributes --load-balancer-arn "${LB_ARN}" --output=text >> ${i}.temp
+
   header_bar 'Application Load balancer listeners' "${i}"
-  LIST_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "${LB_ARN}" --output=text | tee -a ${i}.temp | awk '/LISTENERS/ { printf $2 " "}' )
-#DEFAULTACTIONS
-  header_bar 'Application Load balancer rules' "${i}"
-  for k in ${LIST_ARN}
+  LIST_OUTPUT="$( aws elbv2 describe-listeners --load-balancer-arn "${LB_ARN}" --output=text | tee -a ${i}.temp )"
+  TG_ITEM=$( echo "$LIST_OUTPUT" | awk '/DEFAULTACTIONS/{ printf $2 " "}')
+  LIST_ARN=$( echo "$LIST_OUTPUT" | awk '/LISTENERS/ { printf $2 " "}' )
+
+  header_bar 'Application Load balancer listener rules' "${i}"
+  for j in ${LIST_ARN}
   do
-    aws elbv2 describe-rules --listener-arn "${k}" --output=text >> ${i}.temp
+    aws elbv2 describe-rules --listener-arn "${j}" --output=text >> ${i}.temp
   done
+
+  header_bar 'Application Load balancer Target Groups' "${i}"
+  aws elbv2 describe-target-groups --target-group-arns ${TG_ITEM} --output=text >> ${i}.temp
+
+  header_bar 'Application Load balancer Target Group Attributes' "${i}"
+  for k in ${TG_ITEM}
+  do
+    aws elbv2 describe-target-group-attributes --target-group-arn "${k}" --output >> ${i}.temp
+  done
+
 done
 
 rm -fv ./result
